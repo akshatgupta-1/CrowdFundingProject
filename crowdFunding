@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: UNLICENSED
+
+pragma solidity >=0.8.19;
+
+contract crowdFunding{
+
+    mapping(address=>uint) public contributors;
+    address public manager;
+    uint public minimumContribution;
+    uint public deadline;
+    uint public target;
+    uint public raisedAmount;
+    uint public noOfContributors;
+
+    struct Request{                                 //creating request for contribution 
+        string description;
+        address payable recipient;
+        uint value;
+        bool completed;
+        uint noOfVoters;
+        mapping(address=>bool) voters;
+    }
+
+    mapping(uint=>Request) public requests;
+    uint public numRequests;
+
+    constructor(uint _target,uint _deadline){
+
+        manager = msg.sender;                                                  //assigning manager 
+        target = _target;                                                     // target for the contribution
+        deadline = block.timestamp +  _deadline;  //10sec + 3600 sec        //deadline for raising funds 
+        minimumContribution = 100 wei;                                       // minimum contribution to be made for contributors 
+
+    }
+
+    function sendEth() public payable{
+        require(block.timestamp<deadline, "Deadline has passed");
+        require(msg.value >= minimumContribution , "Minimum Contribution is not met");
+
+        if(contributors[msg.sender]==0){
+            noOfContributors++;                         //counting number of contributors
+        }
+        contributors[msg.sender]+=msg.value;
+        raisedAmount+=msg.value;                      //computing total raised amount
+    }
+
+    function getContractbalance() public view returns(uint){
+        return address(this).balance;                         //checking contract balance
+    }
+
+    function refund() public {
+
+        require(block.timestamp>deadline && raisedAmount<target,"You are not eligible for refund");       //checking if deadlne is surpassed and target is met or not
+        require(contributors[msg.sender]>0);                    //checking if any contribution is made from claimer's side.
+        address payable user = payable(msg.sender);
+        user.transfer(contributors[msg.sender]);              //claiming refund
+        contributors[msg.sender]=0;
+    }
+
+    modifier onlyManager(){
+        require(msg.sender==manager,"Only manager can call this function ");
+        _;
+    }
+
+    function createRequests(string memory _description, address payable _recipient,uint _value) public onlyManager{
+        Request storage newRequest = requests[numRequests];                       //creating request with recipient address and ethers required
+        numRequests++;
+        newRequest.description = _description;
+        newRequest.recipient = _recipient;
+        newRequest.value=_value;
+        newRequest.completed =  false;
+        newRequest.noOfVoters = 0;
+
+    }
+
+    function voteRequest(uint _requestNo) public{
+                                                                                                //voting from contributors to make paymdnt for request raised for not.
+        require(contributors[msg.sender]>0,"You must be a contributor");
+        Request storage thisRequest = requests[_requestNo];
+        require(thisRequest.voters[msg.sender]==false,"You have already voted");
+        thisRequest.voters[msg.sender]=true;
+        thisRequest.noOfVoters++;                                                               //counting votes
+
+    }
+
+    function makePayment(uint _requestNo) public onlyManager{
+        require(raisedAmount>=target);                                                            //checking if raised amount is greater than target
+        Request storage thisRequest = requests[_requestNo];
+        require(thisRequest.completed==false,"The request has been completed");                   //checking if request is already completed or not
+        require(thisRequest.noOfVoters>noOfContributors/2,"Majority does not support");           //checking if more than 50% of the contributors have voted or not
+        thisRequest.recipient.transfer(thisRequest.value);                                        //transfering amount requested to recipient address
+        thisRequest.completed=true;
+
+    }
+
+}
